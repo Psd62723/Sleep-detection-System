@@ -1,4 +1,10 @@
-import SamplePage from './pages/SamplePage';
+import DashboardPage from './pages/DashboardPage';
+import AnalysisPage from './pages/AnalysisPage';
+import ProfilePage from './pages/ProfilePage';
+import AdminPage from './pages/AdminPage';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import NotFound from './pages/NotFound';
 import type { ReactNode } from 'react';
 
 interface RouteConfig {
@@ -10,10 +16,43 @@ interface RouteConfig {
 
 const routes: RouteConfig[] = [
   {
-    name: 'Sample Page',
+    name: 'Dashboard',
     path: '/',
-    element: <SamplePage />
-  }
+    element: <DashboardPage />,
+  },
+  {
+    name: 'Analysis',
+    path: '/analysis',
+    element: <AnalysisPage />,
+  },
+  {
+    name: 'Profile',
+    path: '/profile',
+    element: <ProfilePage />,
+  },
+  {
+    name: 'Admin',
+    path: '/admin',
+    element: <AdminPage />,
+  },
+  {
+    name: 'Login',
+    path: '/login',
+    element: <LoginPage />,
+    visible: false,
+  },
+  {
+    name: 'Register',
+    path: '/register',
+    element: <RegisterPage />,
+    visible: false,
+  },
+  {
+    name: 'Not Found',
+    path: '*',
+    element: <NotFound />,
+    visible: false,
+  },
 ];
 
 export default routes;
