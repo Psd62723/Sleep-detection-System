@@ -5,7 +5,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { FaceAnalysis } from '@/components/analysis/FaceAnalysis';
 import { HRVMonitor } from '@/components/analysis/HRVMonitor';
 import { AnalysisResults } from '@/components/analysis/AnalysisResults';
-import { Camera, Heart } from 'lucide-react';
+import { CameraPermissionsGuide } from '@/components/analysis/CameraPermissionsGuide';
+import { Camera, Heart, Info } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import type { AnalysisResult } from '@/types';
 
 export default function AnalysisPage() {
@@ -19,11 +29,30 @@ export default function AnalysisPage() {
   return (
     <MainLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-bold">Sleep Deprivation Analysis</h1>
-          <p className="text-muted-foreground">
-            Analyze your fatigue level using facial recognition or HRV monitoring
-          </p>
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h1 className="text-3xl font-bold">Sleep Deprivation Analysis</h1>
+            <p className="text-muted-foreground">
+              Analyze your fatigue level using facial recognition or HRV monitoring
+            </p>
+          </div>
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="outline">
+                <Info className="mr-2 h-4 w-4" />
+                Camera Help
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Camera Permissions Guide</DialogTitle>
+                <DialogDescription>
+                  Learn how to enable camera access for sleep analysis
+                </DialogDescription>
+              </DialogHeader>
+              <CameraPermissionsGuide />
+            </DialogContent>
+          </Dialog>
         </div>
 
         <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as 'face' | 'hrv')} className="w-full">

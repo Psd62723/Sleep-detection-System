@@ -34,16 +34,28 @@ export function HRVMonitor({ onAnalysisComplete }: HRVMonitorProps) {
 
   const startMonitoring = async () => {
     if (!isMobile) {
-      setError('HRV monitoring requires a mobile device with flash capability');
+      setError('HRV monitoring requires a mobile device with flash capability. Please use a smartphone or tablet.');
       return;
     }
 
     try {
       setError(null);
+      
+      // Check if mediaDevices is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not supported in this browser. Please use a modern mobile browser like Chrome or Safari.');
+      }
+
+      // Check if running in secure context (HTTPS or localhost)
+      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        throw new Error('Camera access requires a secure connection (HTTPS). Please access this page via HTTPS.');
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: 'environment',
-          advanced: [{ torch: true } as MediaTrackConstraintSet],
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
         },
         audio: false,
       });
@@ -53,20 +65,46 @@ export function HRVMonitor({ onAnalysisComplete }: HRVMonitorProps) {
         videoRef.current.srcObject = mediaStream;
       }
 
-      // Enable flash/torch
+      // Enable flash/torch if available
       const track = mediaStream.getVideoTracks()[0];
       const capabilities = track.getCapabilities() as { torch?: boolean };
       if (capabilities.torch) {
-        await track.applyConstraints({
-          advanced: [{ torch: true } as MediaTrackConstraintSet],
-        });
+        try {
+          await track.applyConstraints({
+            advanced: [{ torch: true } as MediaTrackConstraintSet],
+          });
+        } catch (torchError) {
+          console.warn('Flash not available on this device:', torchError);
+          // Continue without flash - HRV can still work with ambient light
+        }
       }
 
       setIsActive(true);
       performHRVAnalysis();
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Camera/flash access error:', err);
-      setError('Unable to access camera or flash. Please grant permissions and ensure your device supports flash.');
+      
+      let errorMessage = 'Unable to access camera. ';
+      
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          errorMessage += 'Camera permission was denied. Please allow camera access in your browser settings and try again.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          errorMessage += 'No camera found. Please ensure your device has a rear camera and try again.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          errorMessage += 'Camera is already in use by another application. Please close other apps using the camera and try again.';
+        } else if (err.name === 'OverconstrainedError') {
+          errorMessage += 'Camera does not meet the required specifications. Please try with a different device.';
+        } else if (err.name === 'SecurityError') {
+          errorMessage += 'Camera access blocked due to security restrictions. Please check your browser settings.';
+        } else {
+          errorMessage += err.message || 'Please check your camera permissions and ensure your device supports flash.';
+        }
+      } else {
+        errorMessage += 'Please check your camera permissions and ensure your device supports flash.';
+      }
+      
+      setError(errorMessage);
     }
   };
 
@@ -222,7 +260,16 @@ export function HRVMonitor({ onAnalysisComplete }: HRVMonitorProps) {
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Place your finger gently over the rear camera and flash. The flash will illuminate your finger to measure blood flow and calculate HRV. Keep still for 30 seconds.
+          <strong>HRV Monitoring Instructions:</strong>
+          <ul className="list-disc list-inside mt-2 space-y-1">
+            <li>Place your finger gently over the rear camera and flash</li>
+            <li>The flash will illuminate your finger to measure blood flow</li>
+            <li>Keep your finger still for 30 seconds during measurement</li>
+            <li>When prompted, click "Allow" to grant camera permission</li>
+            <li>If blocked, enable camera access in your browser settings</li>
+          </ul>
+          <br />
+          <strong>Note:</strong> This feature requires a mobile device with rear camera and flash capability.
         </AlertDescription>
       </Alert>
     </div>

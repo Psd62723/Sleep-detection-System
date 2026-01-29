@@ -28,8 +28,23 @@ export function FaceAnalysis({ onAnalysisComplete }: FaceAnalysisProps) {
   const startCamera = async () => {
     try {
       setError(null);
+      
+      // Check if mediaDevices is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('Camera API not supported in this browser. Please use a modern browser like Chrome, Firefox, or Safari.');
+      }
+
+      // Check if running in secure context (HTTPS or localhost)
+      if (window.location.protocol !== 'https:' && window.location.hostname !== 'localhost') {
+        throw new Error('Camera access requires a secure connection (HTTPS). Please access this page via HTTPS.');
+      }
+
       const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: 'user' },
+        video: { 
+          facingMode: 'user',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
         audio: false,
       });
       
@@ -38,9 +53,30 @@ export function FaceAnalysis({ onAnalysisComplete }: FaceAnalysisProps) {
         videoRef.current.srcObject = mediaStream;
       }
       setIsActive(true);
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Camera access error:', err);
-      setError('Unable to access camera. Please grant camera permissions.');
+      
+      let errorMessage = 'Unable to access camera. ';
+      
+      if (err instanceof Error) {
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          errorMessage += 'Camera permission was denied. Please allow camera access in your browser settings and try again.';
+        } else if (err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError') {
+          errorMessage += 'No camera found. Please connect a camera device and try again.';
+        } else if (err.name === 'NotReadableError' || err.name === 'TrackStartError') {
+          errorMessage += 'Camera is already in use by another application. Please close other apps using the camera and try again.';
+        } else if (err.name === 'OverconstrainedError') {
+          errorMessage += 'Camera does not meet the required specifications. Please try with a different camera.';
+        } else if (err.name === 'SecurityError') {
+          errorMessage += 'Camera access blocked due to security restrictions. Please check your browser settings.';
+        } else {
+          errorMessage += err.message || 'Please check your camera permissions and try again.';
+        }
+      } else {
+        errorMessage += 'Please check your camera permissions and try again.';
+      }
+      
+      setError(errorMessage);
     }
   };
 
@@ -158,7 +194,14 @@ export function FaceAnalysis({ onAnalysisComplete }: FaceAnalysisProps) {
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          Position your face in the camera frame. The analysis will detect eye openness, blink rate, and facial tension to assess fatigue levels.
+          <strong>Camera Access Required:</strong> Position your face in the camera frame. The analysis will detect eye openness, blink rate, and facial tension to assess fatigue levels.
+          <br /><br />
+          <strong>How to enable camera:</strong>
+          <ul className="list-disc list-inside mt-2 space-y-1">
+            <li>Click "Start Camera" button above</li>
+            <li>When prompted, click "Allow" to grant camera permission</li>
+            <li>If blocked, click the camera icon in your browser's address bar to enable access</li>
+          </ul>
         </AlertDescription>
       </Alert>
     </div>
