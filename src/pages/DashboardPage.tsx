@@ -282,6 +282,14 @@ export default function DashboardPage() {
                     <span className="text-sm font-medium">Analysis Type:</span>
                     <span className="text-sm capitalize">{latestAnalysis.analysis_type}</span>
                   </div>
+                  {latestAnalysis.estimated_sleep_hours && (
+                    <div className="flex items-center justify-between p-2 bg-primary/10 rounded">
+                      <span className="text-sm font-medium">Estimated Sleep:</span>
+                      <span className="text-sm font-bold text-primary">
+                        {latestAnalysis.estimated_sleep_hours.toFixed(1)} hours
+                      </span>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-medium">Fatigue Level:</span>
                     <span className="text-sm font-bold">{latestAnalysis.fatigue_level}%</span>

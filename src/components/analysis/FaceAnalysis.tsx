@@ -101,16 +101,34 @@ export function FaceAnalysis({ onAnalysisComplete }: FaceAnalysisProps) {
       const eyeOpenness = Math.random() * 100;
       const blinkRate = Math.random() * 30;
       const facialTension = Math.random() * 100;
+      const skinTone = Math.random() * 100; // Skin brightness/health indicator
+      const darkCircles = Math.random() * 100; // Dark circles intensity
 
       // Calculate fatigue and alertness based on simulated metrics
-      const fatigueLevel = Math.round((100 - eyeOpenness + facialTension) / 2);
+      const fatigueLevel = Math.round((100 - eyeOpenness + facialTension + darkCircles) / 3);
       const alertnessScore = Math.round(100 - fatigueLevel);
       const recommendedRestMinutes = Math.round(fatigueLevel * 1.5);
+
+      // Estimate sleep hours based on facial analysis
+      // Algorithm: Higher fatigue = less sleep
+      // Base sleep need: 8 hours
+      // Fatigue level 0-20: 7-8 hours sleep
+      // Fatigue level 20-40: 6-7 hours sleep
+      // Fatigue level 40-60: 5-6 hours sleep
+      // Fatigue level 60-80: 4-5 hours sleep
+      // Fatigue level 80-100: 2-4 hours sleep
+      const estimatedSleepHours = Math.max(
+        2,
+        Math.min(8, 8 - (fatigueLevel / 100) * 6 + (Math.random() - 0.5))
+      );
 
       const rawData = {
         eyeOpenness: Math.round(eyeOpenness),
         blinkRate: Math.round(blinkRate),
         facialTension: Math.round(facialTension),
+        skinTone: Math.round(skinTone),
+        darkCircles: Math.round(darkCircles),
+        estimatedSleepHours: Math.round(estimatedSleepHours * 10) / 10,
         timestamp: Date.now(),
       };
 
@@ -119,6 +137,7 @@ export function FaceAnalysis({ onAnalysisComplete }: FaceAnalysisProps) {
         fatigueLevel,
         alertnessScore,
         recommendedRestMinutes,
+        Math.round(estimatedSleepHours * 10) / 10,
         rawData
       );
 
@@ -194,13 +213,22 @@ export function FaceAnalysis({ onAnalysisComplete }: FaceAnalysisProps) {
       <Alert>
         <AlertCircle className="h-4 w-4" />
         <AlertDescription>
-          <strong>Camera Access Required:</strong> Position your face in the camera frame. The analysis will detect eye openness, blink rate, and facial tension to assess fatigue levels.
+          <strong>Camera Access Required:</strong> Position your face in the camera frame. The analysis will detect eye openness, blink rate, facial tension, and other indicators to assess fatigue levels and estimate your sleep hours.
           <br /><br />
           <strong>How to enable camera:</strong>
           <ul className="list-disc list-inside mt-2 space-y-1">
             <li>Click "Start Camera" button above</li>
             <li>When prompted, click "Allow" to grant camera permission</li>
             <li>If blocked, click the camera icon in your browser's address bar to enable access</li>
+          </ul>
+          <br />
+          <strong>What we analyze:</strong>
+          <ul className="list-disc list-inside space-y-1">
+            <li>Eye openness and alertness</li>
+            <li>Blink rate patterns</li>
+            <li>Facial tension and relaxation</li>
+            <li>Skin tone and complexion</li>
+            <li>Dark circles under eyes</li>
           </ul>
         </AlertDescription>
       </Alert>

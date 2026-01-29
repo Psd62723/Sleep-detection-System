@@ -200,6 +200,7 @@ export const analysisApi = {
     fatigueLevel: number,
     alertnessScore: number,
     recommendedRestMinutes: number,
+    estimatedSleepHours?: number,
     rawData?: Record<string, unknown>
   ): Promise<AnalysisResult> {
     const userId = (await supabase.auth.getUser()).data.user?.id;
@@ -213,6 +214,7 @@ export const analysisApi = {
         fatigue_level: fatigueLevel,
         alertness_score: alertnessScore,
         recommended_rest_minutes: recommendedRestMinutes,
+        estimated_sleep_hours: estimatedSleepHours || null,
         raw_data: rawData || null,
       })
       .select()

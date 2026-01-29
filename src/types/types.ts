@@ -31,6 +31,7 @@ export interface AnalysisResult {
   fatigue_level: number;
   alertness_score: number;
   recommended_rest_minutes: number;
+  estimated_sleep_hours?: number;
   raw_data: Record<string, unknown> | null;
   created_at: string;
 }

@@ -163,6 +163,7 @@ export function HRVMonitor({ onAnalysisComplete }: HRVMonitorProps) {
         fatigueLevel,
         alertnessScore,
         recommendedRestMinutes,
+        undefined, // HRV doesn't estimate sleep hours
         rawData
       );
 
