@@ -2,14 +2,15 @@
   "name": "miaoda-react-admin",
   "version": "0.0.1",
   "type": "module",
-  "scripts": {
-    "dev": "vite --config vite.config.dev.ts",
-    "build": "vite build",
-    "preview": "vite preview",
-    "backend": "node server.js",
-    "python-backend": "uvicorn python_sleep_service:app --reload --host 0.0.0.0 --port 8000",
-    "lint": "tsgo -p tsconfig.check.json; npx biome lint; .rules/check.sh; npx tailwindcss -i ./src/index.css -o /dev/null 2>&1 | grep -E '^(CssSyntaxError|Error):.*' || true; .rules/testBuild.sh"
-  },
+ "scripts": {
+  "dev": "vite --config vite.config.dev.ts",
+  "build": "vite build",
+  "preview": "vite preview",
+  "backend": "node server.js",
+  "python-backend": "uvicorn python_sleep_service:app --reload --host 0.0.0.0 --port 8000",
+  "lint": "tsgo -p tsconfig.check.json; npx biome lint; .rules/check.sh; npx tailwindcss -i ./src/index.css -o /dev/null 2>&1 | grep -E '^(CssSyntaxError|Error):.*' || true; .rules/testBuild.sh",
+  "test": "echo \"No tests available\""
+}
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
     "@mediapipe/camera_utils": "^0.3.1675466862",
