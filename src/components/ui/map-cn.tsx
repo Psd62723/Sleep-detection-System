@@ -1,196 +1,155 @@
-/**
- * Baidu Map GL Component
- * 
- * React map component based on Baidu Map WebGL API, supports custom markers, zoom levels and other configurations
- * 
- * Usage example:
- * <Map
- *   ak="OeTpXHgdUrRT2pPyAPRL7pog6GlMlQzl" // Baidu Map API key
- *   option={{
- *       address: "Liugong Island Scenic Area, Huancui District, Weihai City, Shandong Province",
- *       lat: 37.51029432858647, // Latitude
- *       lng: 122.19726116385918, // Longitude
- *       zoom: 12, // Zoom level
- *   }}
- *   className="w-[600px] h-[300px] rounded-lg" // Container styles
- * >
- *   <MapTitle className="text-md"/> // Optional title component
- * </Map>
- */
+import { useEffect, useRef, useState } from "react";
 
-import {
-    createContext,
-    useCallback,
-    useContext,
-    useEffect,
-    useMemo,
-    useRef,
-} from "react";
-
-/** Map context properties */
-type MapContextProps = {
-// Address
-address?: string; /** Map marker address */
-};
-
-const MapContext = createContext<MapContextProps | null>(null);
-
-/** Default map configuration */
-const defaultOption = {
-zoom: 15, /** Default zoom level */
-lng: 116.404, /** Default longitude (Beijing Tiananmen Square) */
-lat: 39.915, /** Default latitude (Beijing Tiananmen Square) */
-address: "Chang'an Street, Dongcheng District, Beijing", /** Default address */
-};
-
-const loadScript = (src: string) => {
-return new Promise<void>((ok, fail) => {
-    const script = document.createElement("script");
-    script.onerror = (reason) => fail(reason);
-
-    if (~src.indexOf("{{callback}}")) {
-    const callbackFn = `loadscriptcallback_${(+new Date()).toString(36)}`;
-    (window as any)[callbackFn] = () => {
-        ok();
-        delete (window as any)[callbackFn];
-    };
-    src = src.replace("{{callback}}", callbackFn);
-    } else {
-    script.onload = () => ok();
+// Load Leaflet dynamically from CDN to avoid npm dependency bundling errors
+const loadLeaflet = () => {
+  return new Promise<void>((resolve, reject) => {
+    if ((window as any).L) {
+      resolve();
+      return;
     }
+    
+    // Add Leaflet CSS
+    const link = document.createElement("link");
+    link.rel = "stylesheet";
+    link.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    link.crossOrigin = "";
+    document.head.appendChild(link);
 
-    script.src = src;
+    // Add Leaflet Script
+    const script = document.createElement("script");
+    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.crossOrigin = "";
+    script.onload = () => resolve();
+    script.onerror = () => reject(new Error("Leaflet script failed to load"));
     document.head.appendChild(script);
-});
+  });
 };
 
-const useMap = () => {
-const context = useContext(MapContext);
-
-if (!context) {
-    return {};
+interface LiveMapProps {
+  userCoords?: [number, number];
+  className?: string;
 }
 
-return context;
-};
+export function Map({ userCoords, className = "h-[300px] w-full rounded-2xl" }: LiveMapProps) {
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<any>(null);
+  const [isLoaded, setIsLoaded] = useState(false);
+  const [currentCoords, setCurrentCoords] = useState<[number, number]>(userCoords || [12.9716, 77.5946]); // Bangalore default
 
-/**
- * Map title component
- * @param {string} className - Custom class name
- */
-const MapTitle = ({ className }: React.ComponentProps<"div">) => {
-const { address } = useMap();
-if (!address) return null;
-return <span className={`text-lg font-bold ${className}`}>{address}</span>;
-};
+  useEffect(() => {
+    loadLeaflet()
+      .then(() => {
+        setIsLoaded(true);
+      })
+      .catch((e) => console.error("Leaflet loader error:", e));
+  }, []);
 
-// Record Baidu Map SDK loading status
-let BMapGLLoadingPromise: Promise<void> | null = null;
+  // Update center when coords change
+  useEffect(() => {
+    if (userCoords) {
+      setCurrentCoords(userCoords);
+    }
+  }, [userCoords]);
 
-/**
- * Baidu Map main component
- * @param {string} ak - Baidu Map API key, defaults to 'OeTpXHgdUrRT2pPyAPRL7pog6GlMlQzl'
- * @param {object} option - Map configuration options
- * @param {number} option.zoom - Map zoom level
- * @param {number} option.lng - Longitude coordinate
- * @param {number} option.lat - Latitude coordinate
- * @param {string} option.address - Marker address
- * @param {string} className - Container custom class name
- * @param {ReactNode} children - Child components, usually MapTitle
- */
-const Map = ({
-ak,
-option,
-className,
-children,
-...props
-}: React.ComponentProps<"div"> & {
-ak: string;
-option?: {
-    zoom: number;
-    lng: number;
-    lat: number;
-    address: string;
-};
-}) => {
-const mapRef = useRef<HTMLDivElement>(null);
-const currentRef = useRef(null);
+  // Request user GPS location if not provided
+  useEffect(() => {
+    if (navigator.geolocation && !userCoords) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setCurrentCoords([position.coords.latitude, position.coords.longitude]);
+        },
+        (error) => {
+          console.warn("GPS access denied, defaulting map center", error);
+        }
+      );
+    }
+  }, [userCoords]);
 
-const _options = useMemo(() => {
-    return { ...defaultOption, ...option };
-}, [option]);
-
-const contextValue = useMemo<MapContextProps>(
-    () => ({
-    address: option?.address,
-    }),
-    [option?.address]
-);
-
-const initMap = useCallback(() => {
-    if (!mapRef.current) return;
-
-    let map = currentRef.current;
-
-    if (!map) {
-    // Create map instance
-    map = new (window as any).BMapGL.Map(mapRef.current);
-    currentRef.current = map;
+  useEffect(() => {
+    if (!isLoaded || !mapContainerRef.current) return;
+    
+    // Clean up previous map instance
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
     }
 
-    // Clear overlays
-    map.clearOverlays();
+    const L = (window as any).L;
+    if (!L) return;
 
-    // Set map center coordinates and map level
-    const center = new (window as any).BMapGL.Point(
-    _options?.lng,
-    _options?.lat
-    );
+    // Create Map centered at user's current GPS coordinates
+    const map = L.map(mapContainerRef.current).setView(currentCoords, 14);
+    mapInstanceRef.current = map;
 
-    map.centerAndZoom(center, _options?.zoom);
+    // OpenStreetMap free tile server
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+    }).addTo(map);
 
-    // Add marker
-    const marker = new (window as any).BMapGL.Marker(center);
-    map.addOverlay(marker);
-}, [_options]);
-
-useEffect(() => {
-    // Check if Baidu Map API is loaded
-    if ((window as any).BMapGL) {
-    initMap();
-    } else if (BMapGLLoadingPromise) {
-    BMapGLLoadingPromise.then(initMap).then(() => {
-        BMapGLLoadingPromise = null;
+    // Custom CSS icons for markers
+    const carIcon = L.divIcon({
+      className: 'bg-indigo-600 border-4 border-white h-7 w-7 rounded-full shadow-2xl flex items-center justify-center text-white text-xs font-bold ring-4 ring-indigo-500/30 animate-pulse',
+      html: '🚗',
+      iconSize: [28, 28],
+      iconAnchor: [14, 14]
     });
-    } else {
-    BMapGLLoadingPromise = loadScript(
-        `//api.map.baidu.com/api?type=webgl&v=1.0&ak=${ak}&callback={{callback}}`
-    );
 
-    BMapGLLoadingPromise.then(initMap).then(() => {
-        BMapGLLoadingPromise = null;
+    const restIcon = L.divIcon({
+      className: 'bg-emerald-600 border-2 border-white h-6 w-6 rounded-full shadow-lg flex items-center justify-center text-white text-xs font-bold',
+      html: '☕',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
     });
-    }
-}, [ak, initMap]);
 
-useEffect(() => {
+    const motelIcon = L.divIcon({
+      className: 'bg-blue-600 border-2 border-white h-6 w-6 rounded-full shadow-lg flex items-center justify-center text-white text-xs font-bold',
+      html: '🏨',
+      iconSize: [24, 24],
+      iconAnchor: [12, 12]
+    });
+
+    // Add marker for driver's current position
+    L.marker(currentCoords, { icon: carIcon })
+      .addTo(map)
+      .bindPopup("<b>My Vehicle</b><br/>GPS tracking active.")
+      .openPopup();
+
+    // Mock 3 nearby rest areas based on driver location
+    const restStops = [
+      { name: "Coffee Shop & Rest Stop", coords: [currentCoords[0] + 0.005, currentCoords[1] + 0.003], icon: restIcon, desc: "0.4 miles away - Open 24/7" },
+      { name: "Highway Service Station", coords: [currentCoords[0] - 0.006, currentCoords[1] - 0.008], icon: restIcon, desc: "0.8 miles away - Free parking" },
+      { name: "Drive-In Motel & Lounge", coords: [currentCoords[0] + 0.008, currentCoords[1] - 0.004], icon: motelIcon, desc: "1.2 miles away - Rooms available" },
+    ];
+
+    restStops.forEach(stop => {
+      L.marker(stop.coords, { icon: stop.icon })
+        .addTo(map)
+        .bindPopup(`<b>${stop.name}</b><br/>${stop.desc}<br/><a href='https://www.google.com/maps/dir/?api=1&destination=${stop.coords[0]},${stop.coords[1]}' target='_blank' style='color:#3b82f6;font-weight:bold;text-decoration:underline;'>Directions</a>`);
+    });
+
     return () => {
-    if (currentRef.current) {
-        currentRef.current = null;
-    }
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.remove();
+        mapInstanceRef.current = null;
+      }
     };
-}, []);
+  }, [isLoaded, currentCoords]);
 
-return (
-    <MapContext.Provider value={contextValue}>
-    <div
-        ref={mapRef}
-        className={`w-full aspect-[16/9] ${className}`}
-        {...props}
-    ></div>
-    {children}
-    </MapContext.Provider>
-);
-};
+  return (
+    <div className="relative border border-border/30 rounded-2xl overflow-hidden shadow-md">
+      {!isLoaded && (
+        <div className="absolute inset-0 bg-slate-900/10 flex items-center justify-center backdrop-blur-sm z-10">
+          <div className="text-center space-y-2">
+            <span className="text-sm font-semibold">Loading Live Maps...</span>
+          </div>
+        </div>
+      )}
+      <div ref={mapContainerRef} className={className} />
+    </div>
+  );
+}
 
-export { Map, MapTitle };
+export function MapTitle({ className, children }: { className?: string; children?: React.ReactNode }) {
+  return <div className={className}>{children}</div>;
+}

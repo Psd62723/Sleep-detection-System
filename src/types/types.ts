@@ -9,6 +9,8 @@ export interface Profile {
   full_name: string | null;
   age: number | null;
   role: UserRole;
+  emergency_contact_number?: string | null;
+  alert_enabled?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -27,12 +29,16 @@ export interface SleepRecord {
 export interface AnalysisResult {
   id: string;
   user_id: string;
-  analysis_type: 'face' | 'hrv';
+  analysis_type: 'face' | 'hrv' | 'driving';
   fatigue_level: number;
   alertness_score: number;
   recommended_rest_minutes: number;
-  estimated_sleep_hours?: number;
+  estimated_sleep_hours?: number | null;
+  session_duration?: number | null;
+  alert_count?: number | null;
   raw_data: Record<string, unknown> | null;
+  alert_triggered?: boolean;
+  alert_message?: string | null;
   created_at: string;
 }
 
@@ -66,6 +72,9 @@ export interface SleepRecordFormData {
 export interface ProfileUpdateData {
   full_name?: string;
   age?: number;
+  role?: UserRole;
+  emergency_contact_number?: string | null;
+  alert_enabled?: boolean;
 }
 
 // Analysis data types

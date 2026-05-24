@@ -2,8 +2,6 @@ import DashboardPage from './pages/DashboardPage';
 import AnalysisPage from './pages/AnalysisPage';
 import ProfilePage from './pages/ProfilePage';
 import AdminPage from './pages/AdminPage';
-import LoginPage from './pages/LoginPage';
-import RegisterPage from './pages/RegisterPage';
 import NotFound from './pages/NotFound';
 import type { ReactNode } from 'react';
 
@@ -34,18 +32,6 @@ const routes: RouteConfig[] = [
     name: 'Admin',
     path: '/admin',
     element: <AdminPage />,
-  },
-  {
-    name: 'Login',
-    path: '/login',
-    element: <LoginPage />,
-    visible: false,
-  },
-  {
-    name: 'Register',
-    path: '/register',
-    element: <RegisterPage />,
-    visible: false,
   },
   {
     name: 'Not Found',

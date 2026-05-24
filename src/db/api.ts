@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { lsGet, lsSet, KEYS } from '@/lib/localStore';
 import type {
   Profile,
   SleepRecord,
@@ -8,162 +8,108 @@ import type {
   PublicProfile,
 } from '@/types';
 
-// Profile API
+// Centralised dummy user ID for local-first operations
+const DUMMY_USER_ID = 'dummy-user-id';
+
+// Profile API - 100% Local Storage, No Database Calls
 export const profileApi = {
   // Get current user profile
   async getCurrentProfile(): Promise<Profile | null> {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', (await supabase.auth.getUser()).data.user?.id)
-      .maybeSingle();
+    const localProfile = lsGet<Profile | null>(KEYS.PROFILE, null);
+    if (localProfile) {
+      return localProfile;
+    }
 
-    if (error) throw error;
-    return data;
+    // Default Fallback Profile if not present
+    const fallbackProfile: Profile = {
+      id: DUMMY_USER_ID,
+      username: 'admin',
+      full_name: 'System Admin',
+      email: 'admin@miaoda.com',
+      age: 28,
+      role: 'admin',
+      emergency_contact_number: null,
+      alert_enabled: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+    lsSet(KEYS.PROFILE, fallbackProfile);
+    return fallbackProfile;
   },
 
   // Update current user profile
   async updateProfile(updates: ProfileUpdateData): Promise<Profile> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
+    const current = await this.getCurrentProfile() || {
+      id: DUMMY_USER_ID,
+      username: 'admin',
+      full_name: 'System Admin',
+      email: 'admin@miaoda.com',
+      age: 28,
+      role: 'admin',
+      emergency_contact_number: null,
+      alert_enabled: true,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as Profile;
 
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', userId)
-      .select()
-      .single();
+    const updated = {
+      ...current,
+      ...updates,
+      updated_at: new Date().toISOString(),
+    } as Profile;
 
-    if (error) throw error;
-    return data;
+    lsSet(KEYS.PROFILE, updated);
+    return updated;
   },
 
   // Get all profiles (admin only)
   async getAllProfiles(): Promise<Profile[]> {
-    const { data, error } = await supabase
-      .from('profiles')
-      .select('*')
-      .order('created_at', { ascending: false });
-
-    if (error) throw error;
-    return Array.isArray(data) ? data : [];
+    const profile = await this.getCurrentProfile();
+    return profile ? [profile] : [];
   },
 
   // Update user role (admin only)
   async updateUserRole(userId: string, role: 'user' | 'admin'): Promise<void> {
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role, updated_at: new Date().toISOString() })
-      .eq('id', userId);
-
-    if (error) throw error;
+    const profile = await this.getCurrentProfile();
+    if (profile && profile.id === userId) {
+      await this.updateProfile({ role } as any);
+    }
   },
 
   // Get public profile
   async getPublicProfile(userId: string): Promise<PublicProfile | null> {
-    const { data, error } = await supabase
-      .from('public_profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
+    const profile = await this.getCurrentProfile();
+    if (profile && profile.id === userId) {
+      return {
+        id: profile.id,
+        username: profile.username,
+        role: profile.role,
+      };
+    }
+    return null;
   },
 };
 
-// Sleep Records API
+// Sleep Records API - 100% Local Storage, No Database Calls
 export const sleepRecordsApi = {
   // Get user's sleep records
   async getUserSleepRecords(limit = 30): Promise<SleepRecord[]> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-
-    const { data, error } = await supabase
-      .from('sleep_records')
-      .select('*')
-      .eq('user_id', userId)
-      .order('sleep_date', { ascending: false })
-      .limit(limit);
-
-    if (error) throw error;
-    return Array.isArray(data) ? data : [];
-  },
-
-  // Create sleep record
-  async createSleepRecord(record: SleepRecordFormData): Promise<SleepRecord> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-
-    const { data, error } = await supabase
-      .from('sleep_records')
-      .insert({
-        user_id: userId,
-        ...record,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  // Update sleep record
-  async updateSleepRecord(
-    id: string,
-    updates: Partial<SleepRecordFormData>
-  ): Promise<SleepRecord> {
-    const { data, error } = await supabase
-      .from('sleep_records')
-      .update({
-        ...updates,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
-  },
-
-  // Delete sleep record
-  async deleteSleepRecord(id: string): Promise<void> {
-    const { error } = await supabase
-      .from('sleep_records')
-      .delete()
-      .eq('id', id);
-
-    if (error) throw error;
+    const records = lsGet<SleepRecord[]>(KEYS.SLEEP_RECORDS, []);
+    return records
+      .sort((a, b) => new Date(b.sleep_date).getTime() - new Date(a.sleep_date).getTime())
+      .slice(0, limit);
   },
 
   // Get sleep statistics
-  async getSleepStatistics(): Promise<{
-    averageSleepHours: number;
-    totalRecords: number;
-    last7DaysAverage: number;
-  }> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-
-    const { data, error } = await supabase
-      .from('sleep_records')
-      .select('sleep_hours, sleep_date')
-      .eq('user_id', userId)
-      .order('sleep_date', { ascending: false });
-
-    if (error) throw error;
-
-    const records = Array.isArray(data) ? data : [];
+  async getSleepStatistics(): Promise<{averageSleepHours: number; totalRecords: number; last7DaysAverage: number}> {
+    const records = lsGet<SleepRecord[]>(KEYS.SLEEP_RECORDS, []);
     const totalRecords = records.length;
     const averageSleepHours = totalRecords > 0
       ? records.reduce((sum, r) => sum + Number(r.sleep_hours), 0) / totalRecords
       : 0;
-
-    const last7Days = records.slice(0, 7);
+    
+    const sorted = [...records].sort((a, b) => new Date(b.sleep_date).getTime() - new Date(a.sleep_date).getTime());
+    const last7Days = sorted.slice(0, 7);
     const last7DaysAverage = last7Days.length > 0
       ? last7Days.reduce((sum, r) => sum + Number(r.sleep_hours), 0) / last7Days.length
       : 0;
@@ -174,71 +120,90 @@ export const sleepRecordsApi = {
       last7DaysAverage: Math.round(last7DaysAverage * 100) / 100,
     };
   },
+
+  // Create sleep record
+  async createSleepRecord(record: SleepRecordFormData): Promise<SleepRecord> {
+    const newRecord = {
+      id: crypto.randomUUID(),
+      user_id: DUMMY_USER_ID,
+      ...record,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    } as SleepRecord;
+    
+    const existing = lsGet<SleepRecord[]>(KEYS.SLEEP_RECORDS, []);
+    lsSet(KEYS.SLEEP_RECORDS, [newRecord, ...existing]);
+    return newRecord;
+  },
+
+  // Update sleep record
+  async updateSleepRecord(id: string, updates: Partial<SleepRecordFormData>): Promise<SleepRecord> {
+    const existing = lsGet<SleepRecord[]>(KEYS.SLEEP_RECORDS, []);
+    const index = existing.findIndex((r) => r.id === id);
+    if (index === -1) throw new Error("Record not found");
+    
+    const updated = { ...existing[index], ...updates, updated_at: new Date().toISOString() };
+    existing[index] = updated;
+    lsSet(KEYS.SLEEP_RECORDS, existing);
+    return updated;
+  },
+
+  // Delete sleep record
+  async deleteSleepRecord(id: string): Promise<void> {
+    const existing = lsGet<SleepRecord[]>(KEYS.SLEEP_RECORDS, []);
+    const filtered = existing.filter((r) => r.id !== id);
+    lsSet(KEYS.SLEEP_RECORDS, filtered);
+  },
 };
 
-// Analysis Results API
+// Analysis Results API - 100% Local Storage, No Database Calls
 export const analysisApi = {
   // Get user's analysis results
   async getUserAnalysisResults(limit = 20): Promise<AnalysisResult[]> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-
-    const { data, error } = await supabase
-      .from('analysis_results')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
-
-    if (error) throw error;
-    return Array.isArray(data) ? data : [];
+    const results = lsGet<AnalysisResult[]>(KEYS.ANALYSIS_RESULTS, []);
+    return results
+      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      .slice(0, limit);
   },
 
   // Create analysis result
   async createAnalysisResult(
-    analysisType: 'face' | 'hrv',
+    analysisType: 'face' | 'hrv' | 'driving',
     fatigueLevel: number,
     alertnessScore: number,
     recommendedRestMinutes: number,
     estimatedSleepHours?: number,
+    sessionDuration?: number,
+    alertCount?: number,
     rawData?: Record<string, unknown>
   ): Promise<AnalysisResult> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
+    const payload = {
+      user_id: DUMMY_USER_ID,
+      analysis_type: analysisType,
+      fatigue_level: fatigueLevel,
+      alertness_score: alertnessScore,
+      recommended_rest_minutes: recommendedRestMinutes,
+      estimated_sleep_hours: estimatedSleepHours || null,
+      session_duration: sessionDuration || null,
+      alert_count: alertCount || null,
+      raw_data: rawData || null,
+    };
 
-    const { data, error } = await supabase
-      .from('analysis_results')
-      .insert({
-        user_id: userId,
-        analysis_type: analysisType,
-        fatigue_level: fatigueLevel,
-        alertness_score: alertnessScore,
-        recommended_rest_minutes: recommendedRestMinutes,
-        estimated_sleep_hours: estimatedSleepHours || null,
-        raw_data: rawData || null,
-      })
-      .select()
-      .single();
-
-    if (error) throw error;
-    return data;
+    const newResult = {
+      id: crypto.randomUUID(),
+      ...payload,
+      created_at: new Date().toISOString(),
+    } as unknown as AnalysisResult;
+    
+    const existing = lsGet<AnalysisResult[]>(KEYS.ANALYSIS_RESULTS, []);
+    lsSet(KEYS.ANALYSIS_RESULTS, [newResult, ...existing]);
+    return newResult;
   },
 
   // Get latest analysis
   async getLatestAnalysis(): Promise<AnalysisResult | null> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-
-    const { data, error } = await supabase
-      .from('analysis_results')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw error;
-    return data;
+    const results = await this.getUserAnalysisResults(1);
+    return results.length > 0 ? results[0] : null;
   },
 
   // Get analysis statistics
@@ -246,30 +211,23 @@ export const analysisApi = {
     averageFatigueLevel: number;
     averageAlertnessScore: number;
     totalAnalyses: number;
+    totalAlerts: number;
   }> {
-    const userId = (await supabase.auth.getUser()).data.user?.id;
-    if (!userId) throw new Error('Not authenticated');
-
-    const { data, error } = await supabase
-      .from('analysis_results')
-      .select('fatigue_level, alertness_score')
-      .eq('user_id', userId);
-
-    if (error) throw error;
-
-    const results = Array.isArray(data) ? data : [];
+    const results = lsGet<AnalysisResult[]>(KEYS.ANALYSIS_RESULTS, []);
     const totalAnalyses = results.length;
     const averageFatigueLevel = totalAnalyses > 0
-      ? results.reduce((sum, r) => sum + r.fatigue_level, 0) / totalAnalyses
+      ? results.reduce((sum, r) => sum + Number(r.fatigue_level), 0) / totalAnalyses
       : 0;
     const averageAlertnessScore = totalAnalyses > 0
-      ? results.reduce((sum, r) => sum + r.alertness_score, 0) / totalAnalyses
+      ? results.reduce((sum, r) => sum + Number(r.alertness_score), 0) / totalAnalyses
       : 0;
+    const totalAlerts = results.reduce((sum, r) => sum + (Number(r.alert_count) || 0), 0);
 
     return {
       averageFatigueLevel: Math.round(averageFatigueLevel),
       averageAlertnessScore: Math.round(averageAlertnessScore),
       totalAnalyses,
+      totalAlerts,
     };
   },
 };

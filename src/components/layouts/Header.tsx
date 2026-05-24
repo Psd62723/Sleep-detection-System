@@ -66,7 +66,7 @@ export function Header() {
         </div>
 
         <div className="flex items-center gap-4">
-          {user ? (
+          {user && (
             <>
               <div className="hidden md:flex items-center gap-4">
                 <span className="text-sm text-muted-foreground">
@@ -137,15 +137,6 @@ export function Header() {
                 </SheetContent>
               </Sheet>
             </>
-          ) : (
-            <div className="flex items-center gap-2">
-              <Button asChild variant="outline">
-                <Link to="/login">Login</Link>
-              </Button>
-              <Button asChild>
-                <Link to="/register">Register</Link>
-              </Button>
-            </div>
           )}
         </div>
       </div>

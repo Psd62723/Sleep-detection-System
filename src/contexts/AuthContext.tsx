@@ -1,21 +1,17 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
-import { supabase } from '@/db/supabase';
+import { lsGet, lsSet, KEYS } from '@/lib/localStore';
 import type { User } from '@supabase/supabase-js';
 import type { Profile } from '@/types';
 
+// Fast local mock helper for profiles
 export async function getProfile(userId: string): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('*')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (error) {
-    console.error('Failed to fetch user profile:', error);
-    return null;
+  const storedProfile = lsGet<Profile | null>(KEYS.PROFILE, null);
+  if (storedProfile && storedProfile.id === userId) {
+    return storedProfile;
   }
-  return data;
+  return null;
 }
+
 interface AuthContextType {
   user: User | null;
   profile: Profile | null;
@@ -34,60 +30,117 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const refreshProfile = async () => {
-    if (!user) {
-      setProfile(null);
-      return;
+    if (!user) return;
+    const storedProfile = lsGet<Profile | null>(KEYS.PROFILE, null);
+    if (storedProfile) {
+      setProfile(storedProfile);
     }
-
-    const profileData = await getProfile(user.id);
-    setProfile(profileData);
+    setLoading(false);
   };
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        getProfile(session.user.id).then(setProfile);
-      }
-      setLoading(false);
-    });
-    // In this function, do NOT use any await calls. Use `.then()` instead to avoid deadlocks.
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        getProfile(session.user.id).then(setProfile);
-      } else {
-        setProfile(null);
-      }
-    });
+    const checkSession = () => {
+      // 100% offline dummy user authentication bypass
+      const dummyUser = {
+        id: 'dummy-user-id',
+        email: 'admin@miaoda.com',
+        aud: 'authenticated',
+        app_metadata: {},
+        user_metadata: {},
+        created_at: new Date().toISOString(),
+      } as User;
 
-    return () => subscription.unsubscribe();
+      const storedProfile = lsGet<Profile | null>(KEYS.PROFILE, null);
+      const dummyProfile = storedProfile || {
+        id: 'dummy-user-id',
+        username: 'admin',
+        full_name: 'System Admin',
+        email: 'admin@miaoda.com',
+        age: 28,
+        role: 'admin',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      } as Profile;
+
+      if (!storedProfile) {
+        lsSet(KEYS.PROFILE, dummyProfile);
+      }
+
+      setUser(dummyUser);
+      setProfile(dummyProfile);
+      localStorage.setItem('dev_admin_bypass', 'true');
+      setLoading(false);
+    };
+
+    checkSession();
   }, []);
 
-  const signInWithUsername = async (username: string, password: string) => {
-    try {
-      const email = `${username}@miaoda.com`;
-      const { error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  // Trigger profile refresh whenever user changes
+  useEffect(() => {
+    refreshProfile();
+  }, [user]);
 
-      if (error) throw error;
+  // Mock sign in - instantly succeeds using local dummy user
+  const signInWithUsername = async (username: string, _password: string) => {
+    try {
+      const dummyUser = {
+        id: 'dummy-user-id',
+        email: `${username}@miaoda.com`,
+        aud: 'authenticated',
+        app_metadata: {},
+        user_metadata: {},
+        created_at: new Date().toISOString(),
+      } as User;
+
+      let storedProfile = lsGet<Profile | null>(KEYS.PROFILE, null);
+      if (!storedProfile) {
+        storedProfile = {
+          id: 'dummy-user-id',
+          username: username,
+          full_name: username.charAt(0).toUpperCase() + username.slice(1),
+          email: `${username}@miaoda.com`,
+          age: 28,
+          role: 'admin',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        } as Profile;
+        lsSet(KEYS.PROFILE, storedProfile);
+      }
+
+      setUser(dummyUser);
+      setProfile(storedProfile);
       return { error: null };
     } catch (error) {
       return { error: error as Error };
     }
   };
 
-  const signUpWithUsername = async (username: string, password: string) => {
+  // Mock sign up - instantly succeeds using local dummy user
+  const signUpWithUsername = async (username: string, _password: string) => {
     try {
-      const email = `${username}@miaoda.com`;
-      const { error } = await supabase.auth.signUp({
-        email,
-        password,
-      });
+      const storedProfile = {
+        id: 'dummy-user-id',
+        username: username,
+        full_name: username.charAt(0).toUpperCase() + username.slice(1),
+        email: `${username}@miaoda.com`,
+        age: 28,
+        role: 'admin',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      } as Profile;
+      lsSet(KEYS.PROFILE, storedProfile);
+      
+      const dummyUser = {
+        id: 'dummy-user-id',
+        email: `${username}@miaoda.com`,
+        aud: 'authenticated',
+        app_metadata: {},
+        user_metadata: {},
+        created_at: new Date().toISOString(),
+      } as User;
 
-      if (error) throw error;
+      setUser(dummyUser);
+      setProfile(storedProfile);
       return { error: null };
     } catch (error) {
       return { error: error as Error };
@@ -95,7 +148,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const signOut = async () => {
-    await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
   };

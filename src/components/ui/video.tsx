@@ -13,6 +13,7 @@
 import {
     BigPlayButton,
     ControlBar,
+    Player,
     PlayToggle,
     CurrentTimeDisplay,
     TimeDivider,
@@ -22,6 +23,9 @@ import {
     ProgressControl
 } from 'video-react';
 import 'video-react/dist/video-react.css';
+import type { ComponentType } from 'react';
+
+const VideoFullscreenToggle = FullscreenToggle as unknown as ComponentType<any>;
 
 interface VideoProps {
     /** Video resource URL */
@@ -102,7 +106,7 @@ display: block;
         <TimeDivider key="time-divider" />
         <DurationDisplay key="duration-display" />
         <ProgressControl key="progress-control" />
-        <FullscreenToggle key="fullscreen-toggle" />
+        <VideoFullscreenToggle key="fullscreen-toggle" />
         </ControlBar>
         <BigPlayButton position="center" />
     </Player>

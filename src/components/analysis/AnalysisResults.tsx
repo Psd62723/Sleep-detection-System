@@ -1,7 +1,7 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
-import { Brain, Activity, Clock, TrendingUp, Moon, AlertTriangle } from 'lucide-react';
+import { Brain, Activity, Clock, TrendingUp, Moon, AlertTriangle, Bell } from 'lucide-react';
 import type { AnalysisResult } from '@/types';
 
 interface AnalysisResultsProps {
@@ -54,36 +54,51 @@ export function AnalysisResults({ result }: AnalysisResultsProps) {
       </CardHeader>
       <CardContent className="space-y-6">
         {result.estimated_sleep_hours && result.analysis_type === 'face' && (
-          <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                <Moon className="h-5 w-5 text-primary" />
-                <h4 className="font-semibold text-lg">Estimated Sleep Hours</h4>
-              </div>
-              {sleepQuality && (
-                <Badge className={sleepQuality.color}>
-                  {sleepQuality.icon} {sleepQuality.label}
-                </Badge>
-              )}
-            </div>
-            <div className="flex items-baseline gap-2">
-              <p className="text-4xl font-bold text-primary">
-                {result.estimated_sleep_hours.toFixed(1)}
-              </p>
-              <span className="text-lg text-muted-foreground">hours</span>
-            </div>
-            <p className="text-sm text-muted-foreground mt-2">
-              Based on facial analysis of fatigue indicators
-            </p>
-            {result.estimated_sleep_hours < 7 && (
-              <div className="flex items-start gap-2 mt-3 p-2 bg-destructive/10 rounded">
-                <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
-                <p className="text-sm text-destructive">
-                  Sleep deficit detected: You may need {(7 - result.estimated_sleep_hours).toFixed(1)} more hours of sleep
-                </p>
+          <>
+            {/* Alert Status Display */}
+            {(result as any).alert_triggered && (
+              <div className="p-4 bg-destructive/10 border border-destructive/30 rounded-lg flex gap-3">
+                <Bell className="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-destructive mb-1">Alert Sent</h4>
+                  <p className="text-sm text-destructive/80">
+                    {(result as any).alert_message || 'Emergency alert has been sent to your emergency contact.'}
+                  </p>
+                </div>
               </div>
             )}
-          </div>
+
+            <div className="p-4 bg-primary/10 border border-primary/20 rounded-lg">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <Moon className="h-5 w-5 text-primary" />
+                  <h4 className="font-semibold text-lg">Estimated Sleep Hours</h4>
+                </div>
+                {sleepQuality && (
+                  <Badge className={sleepQuality.color}>
+                    {sleepQuality.icon} {sleepQuality.label}
+                  </Badge>
+                )}
+              </div>
+              <div className="flex items-baseline gap-2">
+                <p className="text-4xl font-bold text-primary">
+                  {result.estimated_sleep_hours.toFixed(1)}
+                </p>
+                <span className="text-lg text-muted-foreground">hours</span>
+              </div>
+              <p className="text-sm text-muted-foreground mt-2">
+                Based on facial analysis of fatigue indicators
+              </p>
+              {result.estimated_sleep_hours < 7 && (
+                <div className="flex items-start gap-2 mt-3 p-2 bg-destructive/10 rounded">
+                  <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
+                  <p className="text-sm text-destructive">
+                    Sleep deficit detected: You may need {(7 - result.estimated_sleep_hours).toFixed(1)} more hours of sleep
+                  </p>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         <div className="grid gap-4 md:grid-cols-3">

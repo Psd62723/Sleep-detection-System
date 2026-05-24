@@ -1,20 +1,20 @@
 import { useEffect, useState } from 'react';
 import { MainLayout } from '@/components/layouts/MainLayout';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Activity, Brain, Clock, TrendingUp, Plus } from 'lucide-react';
+import { Activity, Plus, ShieldAlert, TrendingUp, Camera, History } from 'lucide-react';
 import { sleepRecordsApi, analysisApi } from '@/db/api';
+import { lsGet, KEYS } from '@/lib/localStore';
 import { Link } from 'react-router-dom';
-import { SleepChart } from '@/components/dashboard/SleepChart';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { toast } from 'sonner';
+import { seedDummyData } from '@/utils/dataSeeder';
 import type { SleepRecord, AnalysisResult } from '@/types';
 
 const sleepRecordSchema = z.object({
@@ -28,8 +28,9 @@ type SleepRecordFormData = z.infer<typeof sleepRecordSchema>;
 
 export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
-  const [sleepRecords, setSleepRecords] = useState<SleepRecord[]>([]);
-  const [latestAnalysis, setLatestAnalysis] = useState<AnalysisResult | null>(null);
+  const [, setSleepRecords] = useState<SleepRecord[]>([]);
+  const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
+  const [, setLatestAnalysis] = useState<AnalysisResult | null>(null);
   const [stats, setStats] = useState({
     averageSleepHours: 0,
     totalRecords: 0,
@@ -39,6 +40,7 @@ export default function DashboardPage() {
     averageFatigueLevel: 0,
     averageAlertnessScore: 0,
     totalAnalyses: 0,
+    totalAlerts: 0,
   });
   const [dialogOpen, setDialogOpen] = useState(false);
 
@@ -54,26 +56,94 @@ export default function DashboardPage() {
 
   const loadData = async () => {
     try {
-      setLoading(true);
-      const [records, analysis, sleepStats, analysisStatsData] = await Promise.all([
+      // Synchronous Local-First load to bypass any loader immediately
+      const records = lsGet<SleepRecord[]>(KEYS.SLEEP_RECORDS, []);
+      const analyses = lsGet<AnalysisResult[]>(KEYS.ANALYSIS_RESULTS, []);
+      
+      if (records.length > 0) {
+        setSleepRecords(records.slice(0, 7));
+      }
+      if (analyses.length > 0) {
+        setAnalysisResults(analyses.slice(0, 10));
+        setLatestAnalysis(analyses[0]);
+      }
+      
+      // Compute statistics synchronously from local data immediately
+      if (records.length > 0 || analyses.length > 0) {
+        // Average sleep hours
+        const totalRecords = records.length;
+        const averageSleepHours = totalRecords > 0
+          ? records.reduce((sum, r) => sum + Number(r.sleep_hours), 0) / totalRecords
+          : 0;
+        const last7Days = records.slice(0, 7);
+        const last7DaysAverage = last7Days.length > 0
+          ? last7Days.reduce((sum, r) => sum + Number(r.sleep_hours), 0) / last7Days.length
+          : 0;
+        setStats({
+          averageSleepHours: Math.round(averageSleepHours * 100) / 100,
+          totalRecords,
+          last7DaysAverage: Math.round(last7DaysAverage * 100) / 100,
+        });
+
+        // Analysis stats
+        const totalAnalyses = analyses.length;
+        const averageFatigueLevel = totalAnalyses > 0
+          ? analyses.reduce((sum, r) => sum + Number(r.fatigue_level), 0) / totalAnalyses
+          : 0;
+        const averageAlertnessScore = totalAnalyses > 0
+          ? analyses.reduce((sum, r) => sum + Number(r.alertness_score), 0) / totalAnalyses
+          : 0;
+        const totalAlerts = analyses.reduce((sum, r) => sum + (Number(r.alert_count) || 0), 0);
+        setAnalysisStats({
+          averageFatigueLevel: Math.round(averageFatigueLevel),
+          averageAlertnessScore: Math.round(averageAlertnessScore),
+          totalAnalyses,
+          totalAlerts,
+        });
+
+        setLoading(false);
+      }
+      
+      // Stage 2: Fast Parallel Fetch
+      const results = await Promise.allSettled([
         sleepRecordsApi.getUserSleepRecords(7),
+        analysisApi.getUserAnalysisResults(10),
         analysisApi.getLatestAnalysis(),
         sleepRecordsApi.getSleepStatistics(),
         analysisApi.getAnalysisStatistics(),
       ]);
-      setSleepRecords(records);
-      setLatestAnalysis(analysis);
-      setStats(sleepStats);
-      setAnalysisStats(analysisStatsData);
+
+      const r0 = results[0];
+      const r1 = results[1];
+      const r2 = results[2];
+      const r3 = results[3];
+      const r4 = results[4];
+
+      if (r0.status === 'fulfilled' && r0.value) {
+        setSleepRecords(r0.value as SleepRecord[]);
+      }
+      if (r1.status === 'fulfilled' && r1.value) {
+        setAnalysisResults(r1.value as AnalysisResult[]);
+      }
+      if (r2.status === 'fulfilled' && r2.value) {
+        setLatestAnalysis(r2.value as AnalysisResult | null);
+      }
+      if (r3.status === 'fulfilled' && r3.value) {
+        setStats(r3.value as typeof stats);
+      }
+      if (r4.status === 'fulfilled' && r4.value) {
+        setAnalysisStats(r4.value as typeof analysisStats);
+      }
+      
     } catch (error) {
       console.error('Failed to load dashboard data:', error);
-      toast.error('Failed to load dashboard data');
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
+    seedDummyData();
     loadData();
   }, []);
 
@@ -85,238 +155,185 @@ export default function DashboardPage() {
       form.reset();
       loadData();
     } catch (error) {
-      console.error('Failed to create sleep record:', error);
       toast.error('Failed to add sleep record');
     }
   };
 
+  if (loading) {
+    return (
+      <MainLayout>
+        <div className="space-y-4 sm:space-y-6 p-2 sm:p-4 md:p-6">
+          <Skeleton className="h-8 sm:h-10 w-40 sm:w-48" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 md:gap-6">
+            <Skeleton className="h-28 sm:h-32 w-full" />
+            <Skeleton className="h-28 sm:h-32 w-full" />
+            <Skeleton className="h-28 sm:h-32 w-full" />
+            <Skeleton className="h-28 sm:h-32 w-full" />
+          </div>
+          <Skeleton className="h-[300px] sm:h-[400px] w-full" />
+        </div>
+      </MainLayout>
+    );
+  }
+
   return (
     <MainLayout>
-      <div className="space-y-6">
-        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-          <div>
-            <h1 className="text-3xl font-bold">Sleep Dashboard</h1>
-            <p className="text-muted-foreground">Track your sleep patterns and analyze deprivation</p>
-          </div>
-          <div className="flex gap-2">
-            <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-              <DialogTrigger asChild>
-                <Button>
-                  <Plus className="mr-2 h-4 w-4" />
-                  Add Sleep Record
+      <div className="max-w-6xl mx-auto p-6 space-y-8">
+        {/* Hero Section */}
+        <div className="relative overflow-hidden rounded-[2.5rem] bg-slate-900 p-8 sm:p-12 text-white shadow-2xl">
+          <div className="relative z-10 grid md:grid-cols-2 gap-8 items-center">
+            <div>
+              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-black tracking-tighter mb-4 bg-gradient-to-r from-white via-slate-200 to-slate-400 bg-clip-text text-transparent text-left">
+                System Intelligence
+              </h1>
+              <p className="text-slate-400 text-lg sm:text-xl max-w-md leading-relaxed text-left">
+                Real-time physiological telemetry and cognitive performance tracking.
+              </p>
+              <div className="flex flex-wrap gap-4 mt-8 justify-start">
+                <Button asChild size="lg" className="rounded-full px-8 bg-white text-slate-900 hover:bg-slate-200 font-bold transition-all hover:scale-105 active:scale-95 shadow-xl shadow-white/10">
+                  <Link to="/analysis" className="flex items-center gap-2">
+                    <Camera className="h-5 w-5" />
+                    Start Scan
+                  </Link>
                 </Button>
-              </DialogTrigger>
-              <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Add Sleep Record</DialogTitle>
-                  <DialogDescription>Record your sleep hours for tracking</DialogDescription>
-                </DialogHeader>
-                <Form {...form}>
-                  <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                    <FormField
-                      control={form.control}
-                      name="sleep_date"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Date</FormLabel>
-                          <FormControl>
-                            <Input type="date" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="sleep_hours"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Sleep Hours</FormLabel>
-                          <FormControl>
-                            <Input type="number" step="0.5" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="sleep_quality"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Sleep Quality (Optional)</FormLabel>
-                          <FormControl>
-                            <Input placeholder="e.g., Good, Fair, Poor" {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <FormField
-                      control={form.control}
-                      name="notes"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Notes (Optional)</FormLabel>
-                          <FormControl>
-                            <Textarea placeholder="Any additional notes..." {...field} />
-                          </FormControl>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                    <Button type="submit" className="w-full">Add Record</Button>
-                  </form>
-                </Form>
-              </DialogContent>
-            </Dialog>
-            <Button asChild variant="outline">
-              <Link to="/analysis">
-                <Activity className="mr-2 h-4 w-4" />
-                New Analysis
-              </Link>
-            </Button>
+                <Button asChild variant="outline" size="lg" className="rounded-full px-8 border-slate-700 text-white hover:bg-white/5 font-bold transition-all hover:scale-105 active:scale-95">
+                  <Link to="/history" className="flex items-center gap-2">
+                    <History className="h-5 w-5" />
+                    History
+                  </Link>
+                </Button>
+              </div>
+            </div>
+            <div className="hidden md:flex justify-end opacity-10 rotate-12">
+              {/* Decorative graphic */}
+            </div>
           </div>
+          <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-blue-600/20 rounded-full blur-[120px] -mr-48 -mt-48" />
+          <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-purple-600/10 rounded-full blur-[100px] -ml-32 -mb-32" />
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Sleep Hours</CardTitle>
-              <Clock className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-20 bg-muted" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{stats.averageSleepHours}h</div>
-                  <p className="text-xs text-muted-foreground">All time average</p>
-                </>
-              )}
-            </CardContent>
+        {/* Action Buttons */}
+        <div className="flex gap-3 justify-end">
+          <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+            <DialogTrigger asChild>
+              <Button className="rounded-xl font-semibold gap-2 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 shadow-lg">
+                <Plus size={18} />
+                Log Sleep
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[425px]">
+              <DialogHeader>
+                <DialogTitle>Add Sleep Record</DialogTitle>
+                <DialogDescription>Enter your sleep details for analysis.</DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="sleep_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date</FormLabel>
+                        <FormControl>
+                          <Input type="date" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <FormField
+                    control={form.control}
+                    name="sleep_hours"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Hours Slept</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.5" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  <Button type="submit" className="w-full bg-gradient-to-r from-indigo-600 to-blue-600">Save Record</Button>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
+          <Link to="/analysis">
+            <Button className="rounded-xl font-semibold gap-2 bg-gradient-to-r from-orange-500 to-red-600 hover:from-orange-600 hover:to-red-700 shadow-lg border-none">
+              <ShieldAlert size={18} />
+              Driving Safety
+            </Button>
+          </Link>
+        </div>
+
+        {/* Stats Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          <Card className="rounded-[2rem] border-0 shadow-lg bg-white dark:bg-slate-900 p-6 flex items-center gap-6 group hover:shadow-2xl transition-all">
+            <div className="h-16 w-16 rounded-3xl bg-blue-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <ShieldAlert className="h-8 w-8 text-blue-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Total Safety Scans</p>
+              <h3 className="text-3xl font-black text-slate-900 dark:text-white">{analysisStats.totalAnalyses}</h3>
+            </div>
+          </Card>
+          
+          <Card className="rounded-[2rem] border-0 shadow-lg bg-white dark:bg-slate-900 p-6 flex items-center gap-6 group hover:shadow-2xl transition-all">
+            <div className="h-16 w-16 rounded-3xl bg-orange-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Activity className="h-8 w-8 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Avg Fatigue Index</p>
+              <h3 className="text-3xl font-black text-slate-900 dark:text-white">{analysisStats.averageFatigueLevel.toFixed(0)}%</h3>
+            </div>
           </Card>
 
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Last 7 Days</CardTitle>
-              <TrendingUp className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-20 bg-muted" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{stats.last7DaysAverage}h</div>
-                  <p className="text-xs text-muted-foreground">Recent average</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Fatigue Level</CardTitle>
-              <Brain className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-20 bg-muted" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{analysisStats.averageFatigueLevel}%</div>
-                  <p className="text-xs text-muted-foreground">From {analysisStats.totalAnalyses} analyses</p>
-                </>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">Avg Alertness</CardTitle>
-              <Activity className="h-4 w-4 text-muted-foreground" />
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-8 w-20 bg-muted" />
-              ) : (
-                <>
-                  <div className="text-2xl font-bold">{analysisStats.averageAlertnessScore}%</div>
-                  <p className="text-xs text-muted-foreground">Overall score</p>
-                </>
-              )}
-            </CardContent>
+          <Card className="rounded-[2rem] border-0 shadow-lg bg-white dark:bg-slate-900 p-6 flex items-center gap-6 group hover:shadow-2xl transition-all">
+            <div className="h-16 w-16 rounded-3xl bg-emerald-500/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                <TrendingUp className="h-8 w-8 text-emerald-600" />
+            </div>
+            <div>
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Alertness Score</p>
+              <h3 className="text-3xl font-black text-slate-900 dark:text-white">{analysisStats.averageAlertnessScore.toFixed(0)}%</h3>
+            </div>
           </Card>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <Card>
-            <CardHeader>
-              <CardTitle>Sleep Trend (Last 7 Days)</CardTitle>
-              <CardDescription>Your recent sleep patterns</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <Skeleton className="h-64 w-full bg-muted" />
-              ) : (
-                <SleepChart data={sleepRecords} />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Latest Analysis</CardTitle>
-              <CardDescription>Most recent sleep deprivation analysis</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <div className="space-y-2">
-                  <Skeleton className="h-4 w-full bg-muted" />
-                  <Skeleton className="h-4 w-3/4 bg-muted" />
-                  <Skeleton className="h-4 w-1/2 bg-muted" />
-                </div>
-              ) : latestAnalysis ? (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Analysis Type:</span>
-                    <span className="text-sm capitalize">{latestAnalysis.analysis_type}</span>
-                  </div>
-                  {latestAnalysis.estimated_sleep_hours && (
-                    <div className="flex items-center justify-between p-2 bg-primary/10 rounded">
-                      <span className="text-sm font-medium">Estimated Sleep:</span>
-                      <span className="text-sm font-bold text-primary">
-                        {latestAnalysis.estimated_sleep_hours.toFixed(1)} hours
-                      </span>
+        {/* Simplified History Preview */}
+        <Card className="rounded-[2.5rem] border-0 shadow-2xl bg-white dark:bg-slate-900 overflow-hidden">
+          <CardHeader className="bg-slate-50/50 dark:bg-slate-800/20 p-8 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-xl font-black uppercase tracking-tight">Recent Activity</CardTitle>
+              <p className="text-sm text-slate-500">Your latest safety telemetry logs.</p>
+            </div>
+            <Button variant="ghost" asChild>
+              <Link to="/history" className="font-bold text-blue-600">View All</Link>
+            </Button>
+          </CardHeader>
+          <CardContent className="p-0">
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {analysisResults.slice(0, 5).map((result) => (
+                <div key={result.id} className="p-6 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors">
+                  <div className="flex items-center gap-4">
+                    <div className={`h-3 w-3 rounded-full ${result.fatigue_level > 50 ? 'bg-red-500 animate-pulse' : 'bg-emerald-500'}`} />
+                    <div>
+                      <p className="font-bold text-slate-900 dark:text-white capitalize">{result.analysis_type} Session</p>
+                      <p className="text-xs text-slate-500">{new Date(result.created_at).toLocaleString()}</p>
                     </div>
-                  )}
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Fatigue Level:</span>
-                    <span className="text-sm font-bold">{latestAnalysis.fatigue_level}%</span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Alertness Score:</span>
-                    <span className="text-sm font-bold">{latestAnalysis.alertness_score}%</span>
+                  <div className="text-right">
+                    <p className="font-black text-lg">{result.alertness_score}%</p>
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Alertness</p>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Recommended Rest:</span>
-                    <span className="text-sm">{latestAnalysis.recommended_rest_minutes} min</span>
-                  </div>
-                  <Button asChild className="w-full mt-4">
-                    <Link to="/analysis">Run New Analysis</Link>
-                  </Button>
                 </div>
-              ) : (
-                <div className="text-center py-8">
-                  <p className="text-muted-foreground mb-4">No analysis data yet</p>
-                  <Button asChild>
-                    <Link to="/analysis">Start First Analysis</Link>
-                  </Button>
-                </div>
+              ))}
+              {analysisResults.length === 0 && (
+                <div className="p-12 text-center text-slate-500 italic">No activity recorded yet.</div>
               )}
-            </CardContent>
-          </Card>
-        </div>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     </MainLayout>
   );
